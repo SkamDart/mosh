@@ -31,15 +31,15 @@
 */
 
 #include <cassert>
+#include <cstring>
 
 #include "compressor.h"
 #include "src/crypto/byteorder.h"
-#include "src/protobufs/transportinstruction.pb.h"
+#include "src/serialization/mosh_serialization.h"
 #include "src/util/fatal_assert.h"
 #include "transportfragment.h"
 
 using namespace Network;
-using namespace TransportBuffers;
 
 static std::string network_order_string( uint16_t host_order )
 {
@@ -126,7 +126,7 @@ bool FragmentAssembly::add_fragment( Fragment& frag )
   return fragments_arrived == fragments_total;
 }
 
-Instruction FragmentAssembly::get_assembly( void )
+MoshTransportInstruction* FragmentAssembly::get_assembly( void )
 {
   assert( fragments_arrived == fragments_total );
 
@@ -137,8 +137,12 @@ Instruction FragmentAssembly::get_assembly( void )
     encoded += fragments.at( i ).contents;
   }
 
-  Instruction ret;
-  fatal_assert( ret.ParseFromString( get_compressor().uncompress_str( encoded ) ) );
+  std::string uncompressed = get_compressor().uncompress_str( encoded );
+  MoshTransportInstruction* ret = mosh_transport_instruction_deserialize(
+    reinterpret_cast<const uint8_t*>(uncompressed.data()),
+    uncompressed.size()
+  );
+  fatal_assert( ret != nullptr );
 
   fragments.clear();
   fragments_arrived = 0;
@@ -153,25 +157,78 @@ bool Fragment::operator==( const Fragment& x ) const
          && ( initialized == x.initialized ) && ( contents == x.contents );
 }
 
-std::vector<Fragment> Fragmenter::make_fragments( const Instruction& inst, size_t MTU )
+std::vector<Fragment> Fragmenter::make_fragments( const MoshTransportInstruction* inst, size_t MTU )
 {
   MTU -= Fragment::frag_header_len;
-  if ( ( inst.old_num() != last_instruction.old_num() ) || ( inst.new_num() != last_instruction.new_num() )
-       || ( inst.ack_num() != last_instruction.ack_num() )
-       || ( inst.throwaway_num() != last_instruction.throwaway_num() )
-       || ( inst.chaff() != last_instruction.chaff() )
-       || ( inst.protocol_version() != last_instruction.protocol_version() ) || ( last_MTU != MTU ) ) {
+  
+  // Check if this is a new instruction by comparing fields
+  bool is_new_instruction = false;
+  
+  uint64_t inst_old_num = 0, inst_new_num = 0, inst_ack_num = 0, inst_throwaway_num = 0;
+  uint64_t last_old_num = 0, last_new_num = 0, last_ack_num = 0, last_throwaway_num = 0;
+  uint32_t inst_protocol_version = 0, last_protocol_version = 0;
+  
+  mosh_transport_instruction_get_old_num( inst, &inst_old_num );
+  mosh_transport_instruction_get_new_num( inst, &inst_new_num );
+  mosh_transport_instruction_get_ack_num( inst, &inst_ack_num );
+  mosh_transport_instruction_get_throwaway_num( inst, &inst_throwaway_num );
+  mosh_transport_instruction_get_protocol_version( inst, &inst_protocol_version );
+  
+  mosh_transport_instruction_get_old_num( last_instruction, &last_old_num );
+  mosh_transport_instruction_get_new_num( last_instruction, &last_new_num );
+  mosh_transport_instruction_get_ack_num( last_instruction, &last_ack_num );
+  mosh_transport_instruction_get_throwaway_num( last_instruction, &last_throwaway_num );
+  mosh_transport_instruction_get_protocol_version( last_instruction, &last_protocol_version );
+  
+  if ( inst_old_num != last_old_num || inst_new_num != last_new_num || 
+       inst_ack_num != last_ack_num || inst_throwaway_num != last_throwaway_num ||
+       inst_protocol_version != last_protocol_version || last_MTU != MTU ) {
     next_instruction_id++;
   }
 
-  if ( ( inst.old_num() == last_instruction.old_num() ) && ( inst.new_num() == last_instruction.new_num() ) ) {
-    assert( inst.diff() == last_instruction.diff() );
+  // Serialize the instruction
+  std::vector<uint8_t> buffer( 65536 ); // Large buffer for serialization
+  size_t actual_size;
+  if ( !mosh_transport_instruction_serialize( inst, buffer.data(), buffer.size(), &actual_size ) ) {
+    // Serialization failed
+    return std::vector<Fragment>();
   }
-
-  last_instruction = inst;
+  
+  std::string payload = get_compressor().compress_str( std::string( reinterpret_cast<char*>(buffer.data()), actual_size ) );
+  
+  // Update last_instruction by copying the current one
+  mosh_transport_instruction_destroy( last_instruction );
+  last_instruction = mosh_transport_instruction_create();
+  
+  if ( mosh_transport_instruction_get_protocol_version( inst, &inst_protocol_version ) ) {
+    mosh_transport_instruction_set_protocol_version( last_instruction, inst_protocol_version );
+  }
+  if ( mosh_transport_instruction_get_old_num( inst, &inst_old_num ) ) {
+    mosh_transport_instruction_set_old_num( last_instruction, inst_old_num );
+  }
+  if ( mosh_transport_instruction_get_new_num( inst, &inst_new_num ) ) {
+    mosh_transport_instruction_set_new_num( last_instruction, inst_new_num );
+  }
+  if ( mosh_transport_instruction_get_ack_num( inst, &inst_ack_num ) ) {
+    mosh_transport_instruction_set_ack_num( last_instruction, inst_ack_num );
+  }
+  if ( mosh_transport_instruction_get_throwaway_num( inst, &inst_throwaway_num ) ) {
+    mosh_transport_instruction_set_throwaway_num( last_instruction, inst_throwaway_num );
+  }
+  
+  const char* diff_data;
+  size_t diff_len;
+  if ( mosh_transport_instruction_get_diff( inst, &diff_data, &diff_len ) ) {
+    mosh_transport_instruction_set_diff( last_instruction, diff_data, diff_len );
+  }
+  
+  const char* chaff_data;
+  size_t chaff_len;
+  if ( mosh_transport_instruction_get_chaff( inst, &chaff_data, &chaff_len ) ) {
+    mosh_transport_instruction_set_chaff( last_instruction, chaff_data, chaff_len );
+  }
+  
   last_MTU = MTU;
-
-  std::string payload = get_compressor().compress_str( inst.SerializeAsString() );
   uint16_t fragment_num = 0;
   std::vector<Fragment> ret;
 

@@ -32,14 +32,13 @@
 
 #include <climits>
 
-#include "src/protobufs/hostinput.pb.h"
+#include "src/serialization/mosh_serialization.h"
 #include "src/statesync/completeterminal.h"
 #include "src/util/fatal_assert.h"
 
 using namespace std;
 using namespace Parser;
 using namespace Terminal;
-using namespace HostBuffers;
 
 string Complete::act( const string& str )
 {
@@ -68,29 +67,25 @@ string Complete::act( const Action& act )
 /* interface for Network::Transport */
 string Complete::diff_from( const Complete& existing ) const
 {
-  HostBuffers::HostMessage output;
+  Mosh::HostMessage msg;
 
   if ( existing.get_echo_ack() != get_echo_ack() ) {
     assert( get_echo_ack() >= existing.get_echo_ack() );
-    Instruction* new_echo = output.add_instruction();
-    new_echo->MutableExtension( echoack )->set_echo_ack_num( get_echo_ack() );
+    msg.addEchoAck( get_echo_ack() );
   }
 
   if ( !( existing.get_fb() == get_fb() ) ) {
     if ( ( existing.get_fb().ds.get_width() != terminal.get_fb().ds.get_width() )
          || ( existing.get_fb().ds.get_height() != terminal.get_fb().ds.get_height() ) ) {
-      Instruction* new_res = output.add_instruction();
-      new_res->MutableExtension( resize )->set_width( terminal.get_fb().ds.get_width() );
-      new_res->MutableExtension( resize )->set_height( terminal.get_fb().ds.get_height() );
+      msg.addResize( terminal.get_fb().ds.get_width(), terminal.get_fb().ds.get_height() );
     }
     string update = display.new_frame( true, existing.get_fb(), terminal.get_fb() );
     if ( !update.empty() ) {
-      Instruction* new_inst = output.add_instruction();
-      new_inst->MutableExtension( hostbytes )->set_hoststring( update );
+      msg.addHostBytes( update );
     }
   }
 
-  return output.SerializeAsString();
+  return msg.serialize();
 }
 
 string Complete::init_diff( void ) const
@@ -100,22 +95,42 @@ string Complete::init_diff( void ) const
 
 void Complete::apply_string( const string& diff )
 {
-  HostBuffers::HostMessage input;
-  fatal_assert( input.ParseFromString( diff ) );
+  MoshHostMessage* msg = mosh_host_message_deserialize(
+    reinterpret_cast<const uint8_t*>(diff.data()), 
+    diff.size()
+  );
+  fatal_assert( msg != nullptr );
 
-  for ( int i = 0; i < input.instruction_size(); i++ ) {
-    if ( input.instruction( i ).HasExtension( hostbytes ) ) {
-      string terminal_to_host = act( input.instruction( i ).GetExtension( hostbytes ).hoststring() );
-      assert( terminal_to_host.empty() ); /* server never interrogates client terminal */
-    } else if ( input.instruction( i ).HasExtension( resize ) ) {
-      act( Resize( input.instruction( i ).GetExtension( resize ).width(),
-                   input.instruction( i ).GetExtension( resize ).height() ) );
-    } else if ( input.instruction( i ).HasExtension( echoack ) ) {
-      uint64_t inst_echo_ack_num = input.instruction( i ).GetExtension( echoack ).echo_ack_num();
-      assert( inst_echo_ack_num >= echo_ack );
-      echo_ack = inst_echo_ack_num;
+  size_t instruction_count = mosh_host_message_get_instruction_count( msg );
+  
+  for ( size_t i = 0; i < instruction_count; i++ ) {
+    uint8_t inst_type = mosh_host_message_get_instruction_type( msg, i );
+    
+    if ( inst_type == MOSH_HOST_INSTRUCTION_HOST_BYTES ) {
+      const char* host_data;
+      size_t host_len;
+      
+      if ( mosh_host_message_get_host_bytes( msg, i, &host_data, &host_len ) ) {
+        string terminal_to_host = act( string( host_data, host_len ) );
+        assert( terminal_to_host.empty() ); /* server never interrogates client terminal */
+      }
+    } else if ( inst_type == MOSH_HOST_INSTRUCTION_RESIZE ) {
+      uint32_t width, height;
+      
+      if ( mosh_host_message_get_resize_dimensions_host( msg, i, &width, &height ) ) {
+        act( Resize( width, height ) );
+      }
+    } else if ( inst_type == MOSH_HOST_INSTRUCTION_ECHO_ACK ) {
+      uint64_t inst_echo_ack_num;
+      
+      if ( mosh_host_message_get_echo_ack_num( msg, i, &inst_echo_ack_num ) ) {
+        assert( inst_echo_ack_num >= echo_ack );
+        echo_ack = inst_echo_ack_num;
+      }
     }
   }
+
+  mosh_host_message_destroy( msg );
 }
 
 bool Complete::operator==( Complete const& x ) const

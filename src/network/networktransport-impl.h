@@ -71,31 +71,51 @@ void Transport<MyState, RemoteState>::recv( void )
   Fragment frag( s );
 
   if ( fragments.add_fragment( frag ) ) { /* complete packet */
-    Instruction inst = fragments.get_assembly();
+    MoshTransportInstruction* inst = fragments.get_assembly();
 
-    if ( inst.protocol_version() != MOSH_PROTOCOL_VERSION ) {
-      throw NetworkException( "mosh protocol version mismatch", 0 );
+    uint32_t protocol_version;
+    if ( mosh_transport_instruction_get_protocol_version( inst, &protocol_version ) ) {
+      if ( protocol_version != MOSH_PROTOCOL_VERSION ) {
+        mosh_transport_instruction_destroy( inst );
+        throw NetworkException( "mosh protocol version mismatch", 0 );
+      }
     }
 
-    sender.process_acknowledgment_through( inst.ack_num() );
+    uint64_t ack_num;
+    if ( mosh_transport_instruction_get_ack_num( inst, &ack_num ) ) {
+      sender.process_acknowledgment_through( ack_num );
+    }
 
     /* inform network layer of roundtrip (end-to-end-to-end) connectivity */
     connection.set_last_roundtrip_success( sender.get_sent_state_acked_timestamp() );
+
+    uint64_t new_num;
+    if ( !mosh_transport_instruction_get_new_num( inst, &new_num ) ) {
+      mosh_transport_instruction_destroy( inst );
+      return;
+    }
 
     /* first, make sure we don't already have the new state */
     for ( typename std::list<TimestampedState<RemoteState>>::iterator i = received_states.begin();
           i != received_states.end();
           i++ ) {
-      if ( inst.new_num() == i->num ) {
+      if ( new_num == i->num ) {
+        mosh_transport_instruction_destroy( inst );
         return;
       }
+    }
+
+    uint64_t old_num;
+    if ( !mosh_transport_instruction_get_old_num( inst, &old_num ) ) {
+      mosh_transport_instruction_destroy( inst );
+      return;
     }
 
     /* now, make sure we do have the old state */
     bool found = 0;
     typename std::list<TimestampedState<RemoteState>>::iterator reference_state = received_states.begin();
     while ( reference_state != received_states.end() ) {
-      if ( inst.old_num() == reference_state->num ) {
+      if ( old_num == reference_state->num ) {
         found = true;
         break;
       }
@@ -104,7 +124,8 @@ void Transport<MyState, RemoteState>::recv( void )
 
     if ( !found ) {
       //    fprintf( stderr, "Ignoring out-of-order packet. Reference state %d has been discarded or hasn't yet been
-      //    received.\n", int(inst.old_num) );
+      //    received.\n", int(old_num) );
+      mosh_transport_instruction_destroy( inst );
       return; /* this is security-sensitive and part of how we enforce idempotency */
     }
 
@@ -113,7 +134,10 @@ void Transport<MyState, RemoteState>::recv( void )
        queue (as sender does), because we don't want to ACK a state
        and then discard it later. */
 
-    process_throwaway_until( inst.throwaway_num() );
+    uint64_t throwaway_num;
+    if ( mosh_transport_instruction_get_throwaway_num( inst, &throwaway_num ) ) {
+      process_throwaway_until( throwaway_num );
+    }
 
     if ( received_states.size() > 1024 ) { /* limit on state queue */
       uint64_t now = timestamp();
@@ -123,8 +147,9 @@ void Transport<MyState, RemoteState>::recv( void )
             stderr,
             "[%u] Receiver queue full, discarding %d (malicious sender or long-unidirectional connectivity?)\n",
             (unsigned int)( timestamp() % 100000 ),
-            (int)inst.new_num() );
+            (int)new_num );
         }
+        mosh_transport_instruction_destroy( inst );
         return;
       } else {
         receiver_quench_timer = now + 15000;
@@ -134,10 +159,12 @@ void Transport<MyState, RemoteState>::recv( void )
     /* apply diff to reference state */
     TimestampedState<RemoteState> new_state = *reference_state;
     new_state.timestamp = timestamp();
-    new_state.num = inst.new_num();
+    new_state.num = new_num;
 
-    if ( !inst.diff().empty() ) {
-      new_state.state.apply_string( inst.diff() );
+    const char* diff_data;
+    size_t diff_len;
+    if ( mosh_transport_instruction_get_diff( inst, &diff_data, &diff_len ) && diff_len > 0 ) {
+      new_state.state.apply_string( std::string( diff_data, diff_len ) );
     }
 
     /* Insert new state in sorted place */
@@ -151,8 +178,9 @@ void Transport<MyState, RemoteState>::recv( void )
                    "[%u] Received OUT-OF-ORDER state %d [ack %d]\n",
                    (unsigned int)( timestamp() % 100000 ),
                    (int)new_state.num,
-                   (int)inst.ack_num() );
+                   (int)ack_num );
         }
+        mosh_transport_instruction_destroy( inst );
         return;
       }
     }
@@ -161,16 +189,18 @@ void Transport<MyState, RemoteState>::recv( void )
                "[%u] Received state %d [coming from %d, ack %d]\n",
                (unsigned int)( timestamp() % 100000 ),
                (int)new_state.num,
-               (int)inst.old_num(),
-               (int)inst.ack_num() );
+               (int)old_num,
+               (int)ack_num );
     }
     received_states.push_back( new_state );
     sender.set_ack_num( received_states.back().num );
 
     sender.remote_heard( new_state.timestamp );
-    if ( !inst.diff().empty() ) {
+    if ( diff_len > 0 ) {
       sender.set_data_ack();
     }
+    
+    mosh_transport_instruction_destroy( inst );
   }
 }
 

@@ -37,10 +37,9 @@
 #include <string>
 #include <vector>
 
-#include "src/protobufs/transportinstruction.pb.h"
+#include "src/serialization/mosh_serialization.h"
 
 namespace Network {
-using namespace TransportBuffers;
 
 class Fragment
 {
@@ -78,24 +77,38 @@ private:
 public:
   FragmentAssembly() : fragments(), current_id( -1 ), fragments_arrived( 0 ), fragments_total( -1 ) {}
   bool add_fragment( Fragment& inst );
-  Instruction get_assembly( void );
+  MoshTransportInstruction* get_assembly( void );
 };
 
 class Fragmenter
 {
 private:
   uint64_t next_instruction_id;
-  Instruction last_instruction;
+  MoshTransportInstruction* last_instruction;
   size_t last_MTU;
 
 public:
-  Fragmenter() : next_instruction_id( 0 ), last_instruction(), last_MTU( -1 )
+  Fragmenter() : next_instruction_id( 0 ), last_instruction( nullptr ), last_MTU( -1 )
   {
-    last_instruction.set_old_num( -1 );
-    last_instruction.set_new_num( -1 );
+    last_instruction = mosh_transport_instruction_create();
+    mosh_transport_instruction_set_old_num( last_instruction, -1 );
+    mosh_transport_instruction_set_new_num( last_instruction, -1 );
   }
-  std::vector<Fragment> make_fragments( const Instruction& inst, size_t MTU );
-  uint64_t last_ack_sent( void ) const { return last_instruction.ack_num(); }
+  
+  ~Fragmenter() {
+    if ( last_instruction ) {
+      mosh_transport_instruction_destroy( last_instruction );
+    }
+  }
+  
+  std::vector<Fragment> make_fragments( const MoshTransportInstruction* inst, size_t MTU );
+  uint64_t last_ack_sent( void ) const { 
+    uint64_t ack_num;
+    if ( mosh_transport_instruction_get_ack_num( last_instruction, &ack_num ) ) {
+      return ack_num;
+    }
+    return 0;
+  }
 };
 
 }

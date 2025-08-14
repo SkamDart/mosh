@@ -9,5 +9,5 @@ terminal_parser_fuzzer_LDADD = ../terminal/libmoshterminal.a ../util/libmoshutil
 terminal_parser_fuzzer_SOURCES = terminal_parser_fuzzer.cc
 
 terminal_fuzzer_CPPFLAGS = -I$(top_srcdir)/
-terminal_fuzzer_LDADD = ../terminal/libmoshterminal.a ../util/libmoshutil.a ../statesync/libmoshstatesync.a ../protobufs/libmoshprotos.a $(TINFO_LIBS) $(protobuf_LIBS)
+terminal_fuzzer_LDADD = ../terminal/libmoshterminal.a ../util/libmoshutil.a ../statesync/libmoshstatesync.a ../serialization/libmoshserialization.a $(TINFO_LIBS)
 terminal_fuzzer_SOURCES = terminal_fuzzer.cc

@@ -33,13 +33,12 @@
 #include <cassert>
 #include <typeinfo>
 
-#include "src/protobufs/userinput.pb.h"
+#include "src/serialization/mosh_serialization.h"
 #include "src/statesync/user.h"
 #include "src/util/fatal_assert.h"
 
 using namespace Parser;
 using namespace Network;
-using namespace ClientBuffers;
 
 void UserStream::subtract( const UserStream* prefix )
 {
@@ -66,28 +65,22 @@ std::string UserStream::diff_from( const UserStream& existing ) const
     my_it++;
   }
 
-  ClientBuffers::UserMessage output;
+  Mosh::UserMessage msg;
+  std::string pending_keys;
 
   while ( my_it != actions.end() ) {
     switch ( my_it->type ) {
       case UserByteType: {
-        char the_byte = my_it->userbyte.c;
-        /* can we combine this with a previous Keystroke? */
-        if ( ( output.instruction_size() > 0 )
-             && ( output.instruction( output.instruction_size() - 1 ).HasExtension( keystroke ) ) ) {
-          output.mutable_instruction( output.instruction_size() - 1 )
-            ->MutableExtension( keystroke )
-            ->mutable_keys()
-            ->append( std::string( &the_byte, 1 ) );
-        } else {
-          Instruction* new_inst = output.add_instruction();
-          new_inst->MutableExtension( keystroke )->set_keys( &the_byte, 1 );
-        }
+        // Accumulate keystrokes to combine them efficiently
+        pending_keys += my_it->userbyte.c;
       } break;
       case ResizeType: {
-        Instruction* new_inst = output.add_instruction();
-        new_inst->MutableExtension( resize )->set_width( my_it->resize.width );
-        new_inst->MutableExtension( resize )->set_height( my_it->resize.height );
+        // Flush any pending keystrokes before resize
+        if ( !pending_keys.empty() ) {
+          msg.addKeystroke( pending_keys );
+          pending_keys.clear();
+        }
+        msg.addResize( my_it->resize.width, my_it->resize.height );
       } break;
       default:
         assert( !"unexpected event type" );
@@ -97,25 +90,46 @@ std::string UserStream::diff_from( const UserStream& existing ) const
     my_it++;
   }
 
-  return output.SerializeAsString();
+  // Flush any remaining keystrokes
+  if ( !pending_keys.empty() ) {
+    msg.addKeystroke( pending_keys );
+  }
+
+  return msg.serialize();
 }
 
 void UserStream::apply_string( const std::string& diff )
 {
-  ClientBuffers::UserMessage input;
-  fatal_assert( input.ParseFromString( diff ) );
+  MoshUserMessage* msg = mosh_user_message_deserialize(
+    reinterpret_cast<const uint8_t*>(diff.data()), 
+    diff.size()
+  );
+  fatal_assert( msg != nullptr );
 
-  for ( int i = 0; i < input.instruction_size(); i++ ) {
-    if ( input.instruction( i ).HasExtension( keystroke ) ) {
-      std::string the_bytes = input.instruction( i ).GetExtension( keystroke ).keys();
-      for ( unsigned int loc = 0; loc < the_bytes.size(); loc++ ) {
-        actions.push_back( UserEvent( UserByte( the_bytes.at( loc ) ) ) );
+  size_t instruction_count = mosh_user_message_get_instruction_count( msg );
+  
+  for ( size_t i = 0; i < instruction_count; i++ ) {
+    uint8_t inst_type = mosh_user_message_get_instruction_type( msg, i );
+    
+    if ( inst_type == MOSH_USER_INSTRUCTION_KEYSTROKE ) {
+      const char* keys_data;
+      size_t keys_len;
+      
+      if ( mosh_user_message_get_keystroke_keys( msg, i, &keys_data, &keys_len ) ) {
+        for ( size_t loc = 0; loc < keys_len; loc++ ) {
+          actions.push_back( UserEvent( UserByte( keys_data[loc] ) ) );
+        }
       }
-    } else if ( input.instruction( i ).HasExtension( resize ) ) {
-      actions.push_back( UserEvent( Resize( input.instruction( i ).GetExtension( resize ).width(),
-                                            input.instruction( i ).GetExtension( resize ).height() ) ) );
+    } else if ( inst_type == MOSH_USER_INSTRUCTION_RESIZE ) {
+      uint32_t width, height;
+      
+      if ( mosh_user_message_get_resize_dimensions( msg, i, &width, &height ) ) {
+        actions.push_back( UserEvent( Resize( width, height ) ) );
+      }
     }
   }
+
+  mosh_user_message_destroy( msg );
 }
 
 const Parser::Action& UserStream::get_action( unsigned int i ) const
