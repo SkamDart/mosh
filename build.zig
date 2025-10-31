@@ -54,6 +54,16 @@ const cpp_flags_with_protobuf = [_][]const u8{
     abseil_include_path,
 };
 
+/// Links the appropriate crypto library based on backend configuration
+fn linkCryptoLibrary(artifact: *std.Build.Step.Compile, backend: []const u8) void {
+    if (std.mem.eql(u8, backend, "openssl")) {
+        artifact.linkSystemLibrary("crypto");
+    } else if (std.mem.eql(u8, backend, "nettle")) {
+        artifact.linkSystemLibrary("nettle");
+    }
+    // Apple Common Crypto doesn't need explicit linking
+}
+
 fn buildTests(config: TestConfig) void {
     const b = config.b;
     const target = config.target;
@@ -89,11 +99,7 @@ fn buildTests(config: TestConfig) void {
 
     ocb_aes_test.linkLibrary(libmoshcrypto);
     ocb_aes_test.linkLibrary(libmoshutil);
-    if (std.mem.eql(u8, crypto_backend, "openssl")) {
-        ocb_aes_test.linkSystemLibrary("crypto");
-    } else if (std.mem.eql(u8, crypto_backend, "nettle")) {
-        ocb_aes_test.linkSystemLibrary("nettle");
-    }
+    linkCryptoLibrary(ocb_aes_test, crypto_backend);
 
     b.installArtifact(ocb_aes_test);
 
@@ -121,11 +127,7 @@ fn buildTests(config: TestConfig) void {
 
     encrypt_decrypt_test.linkLibrary(libmoshcrypto);
     encrypt_decrypt_test.linkLibrary(libmoshutil);
-    if (std.mem.eql(u8, crypto_backend, "openssl")) {
-        encrypt_decrypt_test.linkSystemLibrary("crypto");
-    } else if (std.mem.eql(u8, crypto_backend, "nettle")) {
-        encrypt_decrypt_test.linkSystemLibrary("nettle");
-    }
+    linkCryptoLibrary(encrypt_decrypt_test, crypto_backend);
 
     b.installArtifact(encrypt_decrypt_test);
 
@@ -158,11 +160,7 @@ fn buildTests(config: TestConfig) void {
     nonce_incr_test.linkLibrary(libmoshprotos);
     nonce_incr_test.linkSystemLibrary("protobuf");
     nonce_incr_test.linkSystemLibrary("z");
-    if (std.mem.eql(u8, crypto_backend, "openssl")) {
-        nonce_incr_test.linkSystemLibrary("crypto");
-    } else if (std.mem.eql(u8, crypto_backend, "nettle")) {
-        nonce_incr_test.linkSystemLibrary("nettle");
-    }
+    linkCryptoLibrary(nonce_incr_test, crypto_backend);
 
     nonce_incr_test.step.dependOn(protoc_step);
     b.installArtifact(nonce_incr_test);
@@ -293,12 +291,7 @@ pub fn build(b: *std.Build) void {
     });
 
     // Link with appropriate crypto library
-    if (std.mem.eql(u8, crypto_backend, "openssl")) {
-        libmoshcrypto.linkSystemLibrary("crypto");
-    } else if (std.mem.eql(u8, crypto_backend, "nettle")) {
-        libmoshcrypto.linkSystemLibrary("nettle");
-    }
-    // Apple Common Crypto is part of the system, no explicit linking needed
+    linkCryptoLibrary(libmoshcrypto, crypto_backend);
 
     b.installArtifact(libmoshcrypto);
 
@@ -515,13 +508,7 @@ pub fn build(b: *std.Build) void {
     mosh_client.linkSystemLibrary("ncurses");
     mosh_client.linkSystemLibrary("protobuf");
     mosh_client.linkSystemLibrary("z");
-    if (std.mem.eql(u8, crypto_backend, "openssl")) {
-        mosh_client.linkSystemLibrary("crypto");
-    } else if (std.mem.eql(u8, crypto_backend, "nettle")) {
-        mosh_client.linkSystemLibrary("nettle");
-    }
-
-    // Link with math library
+    linkCryptoLibrary(mosh_client, crypto_backend);
     mosh_client.linkSystemLibrary("m");
 
     // Make sure protobuf generation happens before building
@@ -574,17 +561,9 @@ pub fn build(b: *std.Build) void {
     mosh_server.linkSystemLibrary("ncurses");
     mosh_server.linkSystemLibrary("protobuf");
     mosh_server.linkSystemLibrary("z");
-    if (std.mem.eql(u8, crypto_backend, "openssl")) {
-        mosh_server.linkSystemLibrary("crypto");
-    } else if (std.mem.eql(u8, crypto_backend, "nettle")) {
-        mosh_server.linkSystemLibrary("nettle");
-    }
-
-    // Link with math library
+    linkCryptoLibrary(mosh_server, crypto_backend);
     mosh_server.linkSystemLibrary("m");
-
-    // Link with util library for forkpty() on macOS and other platforms
-    mosh_server.linkSystemLibrary("util");
+    mosh_server.linkSystemLibrary("util"); // For forkpty()
 
     // Make sure protobuf generation happens before building
     mosh_server.step.dependOn(protoc_step);
