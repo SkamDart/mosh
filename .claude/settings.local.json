@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pkg-config:*)",
+      "Bash(zig build:*)",
+      "Bash(zig init:*)",
+      "Read(//nix/store/z5igg8shrk55akwzidp77sw9056j2hbg-zig-0.15.1/lib/std/**)",
+      "Bash(ar:*)",
+      "Bash(protoc:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
