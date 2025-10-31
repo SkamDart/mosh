@@ -1,5 +1,245 @@
 const std = @import("std");
 
+const TestConfig = struct {
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    crypto_backend: []const u8,
+    protoc_step: *std.Build.Step,
+    libmoshcrypto: *std.Build.Step.Compile,
+    libmoshutil: *std.Build.Step.Compile,
+    libmoshnetwork: *std.Build.Step.Compile,
+    libmoshprotos: *std.Build.Step.Compile,
+};
+
+fn buildTests(config: TestConfig) void {
+    const b = config.b;
+    const target = config.target;
+    const optimize = config.optimize;
+    const crypto_backend = config.crypto_backend;
+    const protoc_step = config.protoc_step;
+    const libmoshcrypto = config.libmoshcrypto;
+    const libmoshutil = config.libmoshutil;
+    const libmoshnetwork = config.libmoshnetwork;
+    const libmoshprotos = config.libmoshprotos;
+
+    // Test step to run all tests
+    const test_step = b.step("test", "Run all tests");
+
+    // ocb-aes test
+    const ocb_aes_test_module = b.createModule(.{
+        .root_source_file = null,
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+        .link_libcpp = true,
+    });
+
+    const ocb_aes_test = b.addExecutable(.{
+        .name = "ocb-aes",
+        .root_module = ocb_aes_test_module,
+    });
+
+    ocb_aes_test.addIncludePath(b.path("src/tests"));
+    ocb_aes_test.addIncludePath(b.path("src/crypto"));
+    ocb_aes_test.addIncludePath(b.path("src/util"));
+    ocb_aes_test.addIncludePath(b.path("src/include"));
+    ocb_aes_test.addIncludePath(b.path("."));
+
+    ocb_aes_test.addCSourceFiles(.{
+        .files = &.{
+            "src/tests/ocb-aes.cc",
+            "src/tests/test_utils.cc",
+        },
+        .flags = &.{
+            "-std=c++17",
+            "-Wall",
+            "-fPIC",
+        },
+    });
+
+    ocb_aes_test.linkLibrary(libmoshcrypto);
+    ocb_aes_test.linkLibrary(libmoshutil);
+    if (std.mem.eql(u8, crypto_backend, "openssl")) {
+        ocb_aes_test.linkSystemLibrary("crypto");
+    } else if (std.mem.eql(u8, crypto_backend, "nettle")) {
+        ocb_aes_test.linkSystemLibrary("nettle");
+    }
+
+    b.installArtifact(ocb_aes_test);
+
+    const run_ocb_aes = b.addRunArtifact(ocb_aes_test);
+    test_step.dependOn(&run_ocb_aes.step);
+
+    // encrypt-decrypt test
+    const encrypt_decrypt_test_module = b.createModule(.{
+        .root_source_file = null,
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+        .link_libcpp = true,
+    });
+
+    const encrypt_decrypt_test = b.addExecutable(.{
+        .name = "encrypt-decrypt",
+        .root_module = encrypt_decrypt_test_module,
+    });
+
+    encrypt_decrypt_test.addIncludePath(b.path("src/tests"));
+    encrypt_decrypt_test.addIncludePath(b.path("src/crypto"));
+    encrypt_decrypt_test.addIncludePath(b.path("src/util"));
+    encrypt_decrypt_test.addIncludePath(b.path("src/include"));
+    encrypt_decrypt_test.addIncludePath(b.path("."));
+
+    encrypt_decrypt_test.addCSourceFiles(.{
+        .files = &.{
+            "src/tests/encrypt-decrypt.cc",
+            "src/tests/test_utils.cc",
+        },
+        .flags = &.{
+            "-std=c++17",
+            "-Wall",
+            "-fPIC",
+        },
+    });
+
+    encrypt_decrypt_test.linkLibrary(libmoshcrypto);
+    encrypt_decrypt_test.linkLibrary(libmoshutil);
+    if (std.mem.eql(u8, crypto_backend, "openssl")) {
+        encrypt_decrypt_test.linkSystemLibrary("crypto");
+    } else if (std.mem.eql(u8, crypto_backend, "nettle")) {
+        encrypt_decrypt_test.linkSystemLibrary("nettle");
+    }
+
+    b.installArtifact(encrypt_decrypt_test);
+
+    const run_encrypt_decrypt = b.addRunArtifact(encrypt_decrypt_test);
+    test_step.dependOn(&run_encrypt_decrypt.step);
+
+    // nonce-incr test
+    const nonce_incr_test_module = b.createModule(.{
+        .root_source_file = null,
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+        .link_libcpp = true,
+    });
+
+    const nonce_incr_test = b.addExecutable(.{
+        .name = "nonce-incr",
+        .root_module = nonce_incr_test_module,
+    });
+
+    nonce_incr_test.addIncludePath(b.path("src/tests"));
+    nonce_incr_test.addIncludePath(b.path("src/network"));
+    nonce_incr_test.addIncludePath(b.path("src/crypto"));
+    nonce_incr_test.addIncludePath(b.path("src/protobufs"));
+    nonce_incr_test.addIncludePath(b.path("src/util"));
+    nonce_incr_test.addIncludePath(b.path("src/include"));
+    nonce_incr_test.addIncludePath(b.path("."));
+
+    nonce_incr_test.addCSourceFiles(.{
+        .files = &.{
+            "src/tests/nonce-incr.cc",
+        },
+        .flags = &.{
+            "-std=c++17",
+            "-Wall",
+            "-fPIC",
+            "-I/opt/homebrew/Cellar/protobuf/33.0/include",
+            "-I/opt/homebrew/Cellar/abseil/20250814.1/include",
+        },
+    });
+
+    nonce_incr_test.linkLibrary(libmoshnetwork);
+    nonce_incr_test.linkLibrary(libmoshcrypto);
+    nonce_incr_test.linkLibrary(libmoshutil);
+    nonce_incr_test.linkLibrary(libmoshprotos);
+    nonce_incr_test.linkSystemLibrary("protobuf");
+    nonce_incr_test.linkSystemLibrary("z");
+    if (std.mem.eql(u8, crypto_backend, "openssl")) {
+        nonce_incr_test.linkSystemLibrary("crypto");
+    } else if (std.mem.eql(u8, crypto_backend, "nettle")) {
+        nonce_incr_test.linkSystemLibrary("nettle");
+    }
+
+    nonce_incr_test.step.dependOn(protoc_step);
+    b.installArtifact(nonce_incr_test);
+
+    const run_nonce_incr = b.addRunArtifact(nonce_incr_test);
+    test_step.dependOn(&run_nonce_incr.step);
+
+    // inpty helper
+    const inpty_module = b.createModule(.{
+        .root_source_file = null,
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+        .link_libcpp = true,
+    });
+
+    const inpty = b.addExecutable(.{
+        .name = "inpty",
+        .root_module = inpty_module,
+    });
+
+    inpty.addIncludePath(b.path("src/tests"));
+    inpty.addIncludePath(b.path("src/util"));
+    inpty.addIncludePath(b.path("src/include"));
+    inpty.addIncludePath(b.path("."));
+
+    inpty.addCSourceFiles(.{
+        .files = &.{
+            "src/tests/inpty.cc",
+        },
+        .flags = &.{
+            "-std=c++17",
+            "-Wall",
+            "-fPIC",
+        },
+    });
+
+    inpty.linkLibrary(libmoshutil);
+    inpty.linkSystemLibrary("util");
+
+    b.installArtifact(inpty);
+
+    // is-utf8-locale helper
+    const is_utf8_locale_module = b.createModule(.{
+        .root_source_file = null,
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+        .link_libcpp = true,
+    });
+
+    const is_utf8_locale = b.addExecutable(.{
+        .name = "is-utf8-locale",
+        .root_module = is_utf8_locale_module,
+    });
+
+    is_utf8_locale.addIncludePath(b.path("src/tests"));
+    is_utf8_locale.addIncludePath(b.path("src/util"));
+    is_utf8_locale.addIncludePath(b.path("src/include"));
+    is_utf8_locale.addIncludePath(b.path("."));
+
+    is_utf8_locale.addCSourceFiles(.{
+        .files = &.{
+            "src/tests/is-utf8-locale.cc",
+        },
+        .flags = &.{
+            "-std=c++17",
+            "-Wall",
+            "-fPIC",
+        },
+    });
+
+    is_utf8_locale.linkLibrary(libmoshutil);
+    is_utf8_locale.linkSystemLibrary("util");
+
+    b.installArtifact(is_utf8_locale);
+}
+
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
@@ -479,222 +719,17 @@ pub fn build(b: *std.Build) void {
     // ====================
     // Tests
     // ====================
-
-    // Test step to run all tests
-    const test_step = b.step("test", "Run all tests");
-
-    // ocb-aes test
-    const ocb_aes_test_module = b.createModule(.{
-        .root_source_file = null,
+    buildTests(.{
+        .b = b,
         .target = target,
         .optimize = optimize,
-        .link_libc = true,
-        .link_libcpp = true,
+        .crypto_backend = crypto_backend,
+        .protoc_step = protoc_step,
+        .libmoshcrypto = libmoshcrypto,
+        .libmoshutil = libmoshutil,
+        .libmoshnetwork = libmoshnetwork,
+        .libmoshprotos = libmoshprotos,
     });
-
-    const ocb_aes_test = b.addExecutable(.{
-        .name = "ocb-aes",
-        .root_module = ocb_aes_test_module,
-    });
-
-    ocb_aes_test.addIncludePath(b.path("src/tests"));
-    ocb_aes_test.addIncludePath(b.path("src/crypto"));
-    ocb_aes_test.addIncludePath(b.path("src/util"));
-    ocb_aes_test.addIncludePath(b.path("src/include"));
-    ocb_aes_test.addIncludePath(b.path("."));
-
-    ocb_aes_test.addCSourceFiles(.{
-        .files = &.{
-            "src/tests/ocb-aes.cc",
-            "src/tests/test_utils.cc",
-        },
-        .flags = &.{
-            "-std=c++17",
-            "-Wall",
-            "-fPIC",
-        },
-    });
-
-    ocb_aes_test.linkLibrary(libmoshcrypto);
-    ocb_aes_test.linkLibrary(libmoshutil);
-    if (std.mem.eql(u8, crypto_backend, "openssl")) {
-        ocb_aes_test.linkSystemLibrary("crypto");
-    } else if (std.mem.eql(u8, crypto_backend, "nettle")) {
-        ocb_aes_test.linkSystemLibrary("nettle");
-    }
-
-    b.installArtifact(ocb_aes_test);
-
-    const run_ocb_aes = b.addRunArtifact(ocb_aes_test);
-    test_step.dependOn(&run_ocb_aes.step);
-
-    // encrypt-decrypt test
-    const encrypt_decrypt_test_module = b.createModule(.{
-        .root_source_file = null,
-        .target = target,
-        .optimize = optimize,
-        .link_libc = true,
-        .link_libcpp = true,
-    });
-
-    const encrypt_decrypt_test = b.addExecutable(.{
-        .name = "encrypt-decrypt",
-        .root_module = encrypt_decrypt_test_module,
-    });
-
-    encrypt_decrypt_test.addIncludePath(b.path("src/tests"));
-    encrypt_decrypt_test.addIncludePath(b.path("src/crypto"));
-    encrypt_decrypt_test.addIncludePath(b.path("src/util"));
-    encrypt_decrypt_test.addIncludePath(b.path("src/include"));
-    encrypt_decrypt_test.addIncludePath(b.path("."));
-
-    encrypt_decrypt_test.addCSourceFiles(.{
-        .files = &.{
-            "src/tests/encrypt-decrypt.cc",
-            "src/tests/test_utils.cc",
-        },
-        .flags = &.{
-            "-std=c++17",
-            "-Wall",
-            "-fPIC",
-        },
-    });
-
-    encrypt_decrypt_test.linkLibrary(libmoshcrypto);
-    encrypt_decrypt_test.linkLibrary(libmoshutil);
-    if (std.mem.eql(u8, crypto_backend, "openssl")) {
-        encrypt_decrypt_test.linkSystemLibrary("crypto");
-    } else if (std.mem.eql(u8, crypto_backend, "nettle")) {
-        encrypt_decrypt_test.linkSystemLibrary("nettle");
-    }
-
-    b.installArtifact(encrypt_decrypt_test);
-
-    const run_encrypt_decrypt = b.addRunArtifact(encrypt_decrypt_test);
-    test_step.dependOn(&run_encrypt_decrypt.step);
-
-    // nonce-incr test
-    const nonce_incr_test_module = b.createModule(.{
-        .root_source_file = null,
-        .target = target,
-        .optimize = optimize,
-        .link_libc = true,
-        .link_libcpp = true,
-    });
-
-    const nonce_incr_test = b.addExecutable(.{
-        .name = "nonce-incr",
-        .root_module = nonce_incr_test_module,
-    });
-
-    nonce_incr_test.addIncludePath(b.path("src/tests"));
-    nonce_incr_test.addIncludePath(b.path("src/network"));
-    nonce_incr_test.addIncludePath(b.path("src/crypto"));
-    nonce_incr_test.addIncludePath(b.path("src/protobufs"));
-    nonce_incr_test.addIncludePath(b.path("src/util"));
-    nonce_incr_test.addIncludePath(b.path("src/include"));
-    nonce_incr_test.addIncludePath(b.path("."));
-
-    nonce_incr_test.addCSourceFiles(.{
-        .files = &.{
-            "src/tests/nonce-incr.cc",
-        },
-        .flags = &.{
-            "-std=c++17",
-            "-Wall",
-            "-fPIC",
-            "-I/opt/homebrew/Cellar/protobuf/33.0/include",
-            "-I/opt/homebrew/Cellar/abseil/20250814.1/include",
-        },
-    });
-
-    nonce_incr_test.linkLibrary(libmoshnetwork);
-    nonce_incr_test.linkLibrary(libmoshcrypto);
-    nonce_incr_test.linkLibrary(libmoshutil);
-    nonce_incr_test.linkLibrary(libmoshprotos);
-    nonce_incr_test.linkSystemLibrary("protobuf");
-    nonce_incr_test.linkSystemLibrary("z");
-    if (std.mem.eql(u8, crypto_backend, "openssl")) {
-        nonce_incr_test.linkSystemLibrary("crypto");
-    } else if (std.mem.eql(u8, crypto_backend, "nettle")) {
-        nonce_incr_test.linkSystemLibrary("nettle");
-    }
-
-    nonce_incr_test.step.dependOn(protoc_step);
-    b.installArtifact(nonce_incr_test);
-
-    const run_nonce_incr = b.addRunArtifact(nonce_incr_test);
-    test_step.dependOn(&run_nonce_incr.step);
-
-    // inpty helper
-    const inpty_module = b.createModule(.{
-        .root_source_file = null,
-        .target = target,
-        .optimize = optimize,
-        .link_libc = true,
-        .link_libcpp = true,
-    });
-
-    const inpty = b.addExecutable(.{
-        .name = "inpty",
-        .root_module = inpty_module,
-    });
-
-    inpty.addIncludePath(b.path("src/tests"));
-    inpty.addIncludePath(b.path("src/util"));
-    inpty.addIncludePath(b.path("src/include"));
-    inpty.addIncludePath(b.path("."));
-
-    inpty.addCSourceFiles(.{
-        .files = &.{
-            "src/tests/inpty.cc",
-        },
-        .flags = &.{
-            "-std=c++17",
-            "-Wall",
-            "-fPIC",
-        },
-    });
-
-    inpty.linkLibrary(libmoshutil);
-    inpty.linkSystemLibrary("util");
-
-    b.installArtifact(inpty);
-
-    // is-utf8-locale helper
-    const is_utf8_locale_module = b.createModule(.{
-        .root_source_file = null,
-        .target = target,
-        .optimize = optimize,
-        .link_libc = true,
-        .link_libcpp = true,
-    });
-
-    const is_utf8_locale = b.addExecutable(.{
-        .name = "is-utf8-locale",
-        .root_module = is_utf8_locale_module,
-    });
-
-    is_utf8_locale.addIncludePath(b.path("src/tests"));
-    is_utf8_locale.addIncludePath(b.path("src/util"));
-    is_utf8_locale.addIncludePath(b.path("src/include"));
-    is_utf8_locale.addIncludePath(b.path("."));
-
-    is_utf8_locale.addCSourceFiles(.{
-        .files = &.{
-            "src/tests/is-utf8-locale.cc",
-        },
-        .flags = &.{
-            "-std=c++17",
-            "-Wall",
-            "-fPIC",
-        },
-    });
-
-    is_utf8_locale.linkLibrary(libmoshutil);
-    is_utf8_locale.linkSystemLibrary("util");
-
-    b.installArtifact(is_utf8_locale);
 
     // Add a build step to show what was built
     const info_step = b.step("info", "Show build information");
