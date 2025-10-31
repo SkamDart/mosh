@@ -40,19 +40,17 @@ const standard_cpp_flags = [_][]const u8{
     "-fPIC",
 };
 
-/// Hardcoded Homebrew paths for macOS dependencies
-/// TODO: Detect these dynamically or make configurable
-const protobuf_include_path = "-I/opt/homebrew/Cellar/protobuf/33.0/include";
-const abseil_include_path = "-I/opt/homebrew/Cellar/abseil/20250814.1/include";
+/// Helper function to add protobuf/abseil includes to an artifact
+/// This links protobuf and lets the system/Nix provide the correct include paths
+fn addProtobufIncludes(artifact: *std.Build.Step.Compile, b: *std.Build) void {
+    _ = b; // unused
 
-/// C++ flags with protobuf includes (for protobuf-dependent targets)
-const cpp_flags_with_protobuf = [_][]const u8{
-    "-std=c++17",
-    "-Wall",
-    "-fPIC",
-    protobuf_include_path,
-    abseil_include_path,
-};
+    // Link with protobuf, which automatically adds necessary include paths
+    // In Nix builds, Nix provides the correct paths via NIX_CFLAGS_COMPILE
+    // On macOS with Homebrew, the compiler will find headers in standard locations
+    // We rely on the system's standard include path search
+    artifact.linkSystemLibrary("protobuf");
+}
 
 /// Links the appropriate crypto library based on backend configuration
 fn linkCryptoLibrary(artifact: *std.Build.Step.Compile, backend: []const u8) void {
@@ -146,12 +144,13 @@ fn buildTests(config: TestConfig) void {
     nonce_incr_test.addIncludePath(b.path("src/protobufs"));
     nonce_incr_test.addIncludePath(b.path("src/util"));
     addStandardIncludes(nonce_incr_test, b);
+    addProtobufIncludes(nonce_incr_test, b);
 
     nonce_incr_test.addCSourceFiles(.{
         .files = &.{
             "src/tests/nonce-incr.cc",
         },
-        .flags = &cpp_flags_with_protobuf,
+        .flags = &standard_cpp_flags,
     });
 
     nonce_incr_test.linkLibrary(libmoshnetwork);
@@ -450,6 +449,7 @@ pub fn build(b: *std.Build) void {
     libmoshstatesync.addIncludePath(b.path("src/protobufs"));
     libmoshstatesync.addIncludePath(b.path("src/util"));
     addStandardIncludes(libmoshstatesync, b);
+    addProtobufIncludes(libmoshstatesync, b);
 
     // Add statesync C++ source files
     libmoshstatesync.addCSourceFiles(.{
@@ -457,7 +457,7 @@ pub fn build(b: *std.Build) void {
             "src/statesync/completeterminal.cc",
             "src/statesync/user.cc",
         },
-        .flags = &cpp_flags_with_protobuf,
+        .flags = &standard_cpp_flags,
     });
 
     // Link with protobuf library (since it uses protobufs)
@@ -485,6 +485,7 @@ pub fn build(b: *std.Build) void {
     mosh_client.addIncludePath(b.path("src/protobufs"));
     mosh_client.addIncludePath(b.path("src/util"));
     addStandardIncludes(mosh_client, b);
+    addProtobufIncludes(mosh_client, b);
 
     // Add mosh-client source files
     mosh_client.addCSourceFiles(.{
@@ -493,7 +494,7 @@ pub fn build(b: *std.Build) void {
             "src/frontend/stmclient.cc",
             "src/frontend/terminaloverlay.cc",
         },
-        .flags = &cpp_flags_with_protobuf,
+        .flags = &standard_cpp_flags,
     });
 
     // Link with all the static libraries we built
@@ -533,6 +534,7 @@ pub fn build(b: *std.Build) void {
     mosh_server.addIncludePath(b.path("src/protobufs"));
     mosh_server.addIncludePath(b.path("src/util"));
     addStandardIncludes(mosh_server, b);
+    addProtobufIncludes(mosh_server, b);
 
     // Add mosh-server source file (just one!)
     mosh_server.addCSourceFiles(.{
@@ -544,8 +546,6 @@ pub fn build(b: *std.Build) void {
             "-Wall",
             "-fPIC",
             "-Wno-deprecated-declarations", // Suppress shared_ptr::unique() deprecation warning
-            protobuf_include_path,
-            abseil_include_path,
         },
     });
 

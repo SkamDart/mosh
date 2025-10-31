@@ -35,6 +35,20 @@
             libutempter
           ];
 
+          # Set up environment for Zig build
+          preConfigure = ''
+            # Zig needs a writable cache directory
+            export HOME=$TMPDIR
+            export XDG_CACHE_HOME=$TMPDIR/cache
+            mkdir -p $XDG_CACHE_HOME
+
+            # Filter out -fmacro-prefix-map flags that Zig doesn't recognize
+            # but keep -I and -L flags that point to Nix store libraries
+            if [ -n "$NIX_CFLAGS_COMPILE" ]; then
+              export NIX_CFLAGS_COMPILE=$(echo "$NIX_CFLAGS_COMPILE" | sed 's/-fmacro-prefix-map=[^ ]*//g')
+            fi
+          '';
+
           # Generate protobuf files before building
           preBuild = ''
             zig build protoc
@@ -120,6 +134,12 @@
           ];
 
           shellHook = ''
+            # Filter out -fmacro-prefix-map flags that Zig doesn't recognize
+            # but keep -I and -L flags that point to Nix store libraries
+            if [ -n "$NIX_CFLAGS_COMPILE" ]; then
+              export NIX_CFLAGS_COMPILE=$(echo "$NIX_CFLAGS_COMPILE" | sed 's/-fmacro-prefix-map=[^ ]*//g')
+            fi
+
             echo "Mosh Zig build environment"
             echo "Available commands:"
             echo "  zig build          - Build all targets"
