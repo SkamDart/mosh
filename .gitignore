@@ -39,3 +39,5 @@ src/include/stamp-h1
 /scripts/mosh
 src/include/version.h
 .zig-cache/
+.zig-out/
+zig-out/

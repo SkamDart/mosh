@@ -336,11 +336,151 @@ pub fn build(b: *std.Build) void {
 
     b.installArtifact(libmoshstatesync);
 
+    // ====================
+    // mosh-client - Main client executable
+    // ====================
+    const mosh_client_module = b.createModule(.{
+        .root_source_file = null,
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+        .link_libcpp = true,
+    });
+
+    const mosh_client = b.addExecutable(.{
+        .name = "mosh-client",
+        .root_module = mosh_client_module,
+    });
+
+    // Add include paths
+    mosh_client.addIncludePath(b.path("src/frontend"));
+    mosh_client.addIncludePath(b.path("src/statesync"));
+    mosh_client.addIncludePath(b.path("src/terminal"));
+    mosh_client.addIncludePath(b.path("src/network"));
+    mosh_client.addIncludePath(b.path("src/crypto"));
+    mosh_client.addIncludePath(b.path("src/protobufs"));
+    mosh_client.addIncludePath(b.path("src/util"));
+    mosh_client.addIncludePath(b.path("src/include"));
+    mosh_client.addIncludePath(b.path("."));
+
+    // Add mosh-client source files
+    mosh_client.addCSourceFiles(.{
+        .files = &.{
+            "src/frontend/mosh-client.cc",
+            "src/frontend/stmclient.cc",
+            "src/frontend/terminaloverlay.cc",
+        },
+        .flags = &.{
+            "-std=c++17",
+            "-Wall",
+            "-fPIC",
+            "-I/opt/homebrew/Cellar/protobuf/33.0/include",
+            "-I/opt/homebrew/Cellar/abseil/20250814.1/include",
+        },
+    });
+
+    // Link with all the static libraries we built
+    mosh_client.linkLibrary(libmoshcrypto);
+    mosh_client.linkLibrary(libmoshnetwork);
+    mosh_client.linkLibrary(libmoshstatesync);
+    mosh_client.linkLibrary(libmoshterminal);
+    mosh_client.linkLibrary(libmoshutil);
+    mosh_client.linkLibrary(libmoshprotos);
+
+    // Link with system libraries
+    mosh_client.linkSystemLibrary("ncurses");
+    mosh_client.linkSystemLibrary("protobuf");
+    mosh_client.linkSystemLibrary("z");
+    if (std.mem.eql(u8, crypto_backend, "openssl")) {
+        mosh_client.linkSystemLibrary("crypto");
+    } else if (std.mem.eql(u8, crypto_backend, "nettle")) {
+        mosh_client.linkSystemLibrary("nettle");
+    }
+
+    // Link with math library
+    mosh_client.linkSystemLibrary("m");
+
+    // Make sure protobuf generation happens before building
+    mosh_client.step.dependOn(protoc_step);
+
+    b.installArtifact(mosh_client);
+
+    // ====================
+    // mosh-server - Main server executable
+    // ====================
+    const mosh_server_module = b.createModule(.{
+        .root_source_file = null,
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+        .link_libcpp = true,
+    });
+
+    const mosh_server = b.addExecutable(.{
+        .name = "mosh-server",
+        .root_module = mosh_server_module,
+    });
+
+    // Add include paths
+    mosh_server.addIncludePath(b.path("src/frontend"));
+    mosh_server.addIncludePath(b.path("src/statesync"));
+    mosh_server.addIncludePath(b.path("src/terminal"));
+    mosh_server.addIncludePath(b.path("src/network"));
+    mosh_server.addIncludePath(b.path("src/crypto"));
+    mosh_server.addIncludePath(b.path("src/protobufs"));
+    mosh_server.addIncludePath(b.path("src/util"));
+    mosh_server.addIncludePath(b.path("src/include"));
+    mosh_server.addIncludePath(b.path("."));
+
+    // Add mosh-server source file (just one!)
+    mosh_server.addCSourceFiles(.{
+        .files = &.{
+            "src/frontend/mosh-server.cc",
+        },
+        .flags = &.{
+            "-std=c++17",
+            "-Wall",
+            "-fPIC",
+            "-Wno-deprecated-declarations", // Suppress shared_ptr::unique() deprecation warning
+            "-I/opt/homebrew/Cellar/protobuf/33.0/include",
+            "-I/opt/homebrew/Cellar/abseil/20250814.1/include",
+        },
+    });
+
+    // Link with all the static libraries we built
+    mosh_server.linkLibrary(libmoshcrypto);
+    mosh_server.linkLibrary(libmoshnetwork);
+    mosh_server.linkLibrary(libmoshstatesync);
+    mosh_server.linkLibrary(libmoshterminal);
+    mosh_server.linkLibrary(libmoshutil);
+    mosh_server.linkLibrary(libmoshprotos);
+
+    // Link with system libraries
+    mosh_server.linkSystemLibrary("ncurses");
+    mosh_server.linkSystemLibrary("protobuf");
+    mosh_server.linkSystemLibrary("z");
+    if (std.mem.eql(u8, crypto_backend, "openssl")) {
+        mosh_server.linkSystemLibrary("crypto");
+    } else if (std.mem.eql(u8, crypto_backend, "nettle")) {
+        mosh_server.linkSystemLibrary("nettle");
+    }
+
+    // Link with math library
+    mosh_server.linkSystemLibrary("m");
+
+    // Link with util library for forkpty() on macOS and other platforms
+    mosh_server.linkSystemLibrary("util");
+
+    // Make sure protobuf generation happens before building
+    mosh_server.step.dependOn(protoc_step);
+
+    b.installArtifact(mosh_server);
+
     // Add a build step to show what was built
     const info_step = b.step("info", "Show build information");
     const info_cmd = b.addSystemCommand(&.{
         "echo",
-        b.fmt("Built libraries:\n- libmoshutil.a\n- libmoshcrypto.a (backend: {s})\n- libmoshnetwork.a (complete)\n- libmoshprotos.a\n- libmoshterminal.a\n- libmoshstatesync.a\n\nAll 6 static libraries complete! 🎉\n", .{crypto_backend}),
+        b.fmt("Built libraries:\n- libmoshutil.a\n- libmoshcrypto.a (backend: {s})\n- libmoshnetwork.a (complete)\n- libmoshprotos.a\n- libmoshterminal.a\n- libmoshstatesync.a\n\nExecutables:\n- mosh-client\n- mosh-server\n\nFull build complete! 🎉\n", .{crypto_backend}),
     });
     info_step.dependOn(&info_cmd.step);
 }
