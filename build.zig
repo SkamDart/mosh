@@ -12,6 +12,34 @@ const TestConfig = struct {
     libmoshprotos: *std.Build.Step.Compile,
 };
 
+// ====================
+// Common Helper Functions
+// ====================
+
+/// Creates a standard C++ module for Mosh build targets
+fn createCppModule(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) *std.Build.Module {
+    return b.createModule(.{
+        .root_source_file = null,
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+        .link_libcpp = true,
+    });
+}
+
+/// Adds standard Mosh include paths to an artifact
+fn addStandardIncludes(artifact: *std.Build.Step.Compile, b: *std.Build) void {
+    artifact.addIncludePath(b.path("src/include"));
+    artifact.addIncludePath(b.path("."));
+}
+
+/// Standard C++ compiler flags used across all Mosh targets
+const standard_cpp_flags = [_][]const u8{
+    "-std=c++17",
+    "-Wall",
+    "-fPIC",
+};
+
 fn buildTests(config: TestConfig) void {
     const b = config.b;
     const target = config.target;
@@ -27,35 +55,22 @@ fn buildTests(config: TestConfig) void {
     const test_step = b.step("test", "Run all tests");
 
     // ocb-aes test
-    const ocb_aes_test_module = b.createModule(.{
-        .root_source_file = null,
-        .target = target,
-        .optimize = optimize,
-        .link_libc = true,
-        .link_libcpp = true,
-    });
-
     const ocb_aes_test = b.addExecutable(.{
         .name = "ocb-aes",
-        .root_module = ocb_aes_test_module,
+        .root_module = createCppModule(b, target, optimize),
     });
 
     ocb_aes_test.addIncludePath(b.path("src/tests"));
     ocb_aes_test.addIncludePath(b.path("src/crypto"));
     ocb_aes_test.addIncludePath(b.path("src/util"));
-    ocb_aes_test.addIncludePath(b.path("src/include"));
-    ocb_aes_test.addIncludePath(b.path("."));
+    addStandardIncludes(ocb_aes_test, b);
 
     ocb_aes_test.addCSourceFiles(.{
         .files = &.{
             "src/tests/ocb-aes.cc",
             "src/tests/test_utils.cc",
         },
-        .flags = &.{
-            "-std=c++17",
-            "-Wall",
-            "-fPIC",
-        },
+        .flags = &standard_cpp_flags,
     });
 
     ocb_aes_test.linkLibrary(libmoshcrypto);
@@ -72,35 +87,22 @@ fn buildTests(config: TestConfig) void {
     test_step.dependOn(&run_ocb_aes.step);
 
     // encrypt-decrypt test
-    const encrypt_decrypt_test_module = b.createModule(.{
-        .root_source_file = null,
-        .target = target,
-        .optimize = optimize,
-        .link_libc = true,
-        .link_libcpp = true,
-    });
-
     const encrypt_decrypt_test = b.addExecutable(.{
         .name = "encrypt-decrypt",
-        .root_module = encrypt_decrypt_test_module,
+        .root_module = createCppModule(b, target, optimize),
     });
 
     encrypt_decrypt_test.addIncludePath(b.path("src/tests"));
     encrypt_decrypt_test.addIncludePath(b.path("src/crypto"));
     encrypt_decrypt_test.addIncludePath(b.path("src/util"));
-    encrypt_decrypt_test.addIncludePath(b.path("src/include"));
-    encrypt_decrypt_test.addIncludePath(b.path("."));
+    addStandardIncludes(encrypt_decrypt_test, b);
 
     encrypt_decrypt_test.addCSourceFiles(.{
         .files = &.{
             "src/tests/encrypt-decrypt.cc",
             "src/tests/test_utils.cc",
         },
-        .flags = &.{
-            "-std=c++17",
-            "-Wall",
-            "-fPIC",
-        },
+        .flags = &standard_cpp_flags,
     });
 
     encrypt_decrypt_test.linkLibrary(libmoshcrypto);
@@ -117,17 +119,9 @@ fn buildTests(config: TestConfig) void {
     test_step.dependOn(&run_encrypt_decrypt.step);
 
     // nonce-incr test
-    const nonce_incr_test_module = b.createModule(.{
-        .root_source_file = null,
-        .target = target,
-        .optimize = optimize,
-        .link_libc = true,
-        .link_libcpp = true,
-    });
-
     const nonce_incr_test = b.addExecutable(.{
         .name = "nonce-incr",
-        .root_module = nonce_incr_test_module,
+        .root_module = createCppModule(b, target, optimize),
     });
 
     nonce_incr_test.addIncludePath(b.path("src/tests"));
@@ -135,8 +129,7 @@ fn buildTests(config: TestConfig) void {
     nonce_incr_test.addIncludePath(b.path("src/crypto"));
     nonce_incr_test.addIncludePath(b.path("src/protobufs"));
     nonce_incr_test.addIncludePath(b.path("src/util"));
-    nonce_incr_test.addIncludePath(b.path("src/include"));
-    nonce_incr_test.addIncludePath(b.path("."));
+    addStandardIncludes(nonce_incr_test, b);
 
     nonce_incr_test.addCSourceFiles(.{
         .files = &.{
@@ -170,33 +163,20 @@ fn buildTests(config: TestConfig) void {
     test_step.dependOn(&run_nonce_incr.step);
 
     // inpty helper
-    const inpty_module = b.createModule(.{
-        .root_source_file = null,
-        .target = target,
-        .optimize = optimize,
-        .link_libc = true,
-        .link_libcpp = true,
-    });
-
     const inpty = b.addExecutable(.{
         .name = "inpty",
-        .root_module = inpty_module,
+        .root_module = createCppModule(b, target, optimize),
     });
 
     inpty.addIncludePath(b.path("src/tests"));
     inpty.addIncludePath(b.path("src/util"));
-    inpty.addIncludePath(b.path("src/include"));
-    inpty.addIncludePath(b.path("."));
+    addStandardIncludes(inpty, b);
 
     inpty.addCSourceFiles(.{
         .files = &.{
             "src/tests/inpty.cc",
         },
-        .flags = &.{
-            "-std=c++17",
-            "-Wall",
-            "-fPIC",
-        },
+        .flags = &standard_cpp_flags,
     });
 
     inpty.linkLibrary(libmoshutil);
@@ -205,33 +185,20 @@ fn buildTests(config: TestConfig) void {
     b.installArtifact(inpty);
 
     // is-utf8-locale helper
-    const is_utf8_locale_module = b.createModule(.{
-        .root_source_file = null,
-        .target = target,
-        .optimize = optimize,
-        .link_libc = true,
-        .link_libcpp = true,
-    });
-
     const is_utf8_locale = b.addExecutable(.{
         .name = "is-utf8-locale",
-        .root_module = is_utf8_locale_module,
+        .root_module = createCppModule(b, target, optimize),
     });
 
     is_utf8_locale.addIncludePath(b.path("src/tests"));
     is_utf8_locale.addIncludePath(b.path("src/util"));
-    is_utf8_locale.addIncludePath(b.path("src/include"));
-    is_utf8_locale.addIncludePath(b.path("."));
+    addStandardIncludes(is_utf8_locale, b);
 
     is_utf8_locale.addCSourceFiles(.{
         .files = &.{
             "src/tests/is-utf8-locale.cc",
         },
-        .flags = &.{
-            "-std=c++17",
-            "-Wall",
-            "-fPIC",
-        },
+        .flags = &standard_cpp_flags,
     });
 
     is_utf8_locale.linkLibrary(libmoshutil);
@@ -251,24 +218,15 @@ pub fn build(b: *std.Build) void {
     // ====================
     // libmoshutil - The simplest library with no internal dependencies
     // ====================
-    const util_module = b.createModule(.{
-        .root_source_file = null, // No Zig source
-        .target = target,
-        .optimize = optimize,
-        .link_libc = true,
-        .link_libcpp = true,
-    });
-
     const libmoshutil = b.addLibrary(.{
         .name = "moshutil",
         .linkage = .static,
-        .root_module = util_module,
+        .root_module = createCppModule(b, target, optimize),
     });
 
     // Add include paths
     libmoshutil.addIncludePath(b.path("src/util"));
-    libmoshutil.addIncludePath(b.path("src/include"));
-    libmoshutil.addIncludePath(b.path("."));
+    addStandardIncludes(libmoshutil, b);
 
     // Add C++ source files
     libmoshutil.addCSourceFiles(.{
@@ -279,11 +237,7 @@ pub fn build(b: *std.Build) void {
             "src/util/timestamp.cc",
             "src/util/pty_compat.cc",
         },
-        .flags = &.{
-            "-std=c++17",
-            "-Wall",
-            "-fPIC",
-        },
+        .flags = &standard_cpp_flags,
     });
 
     b.installArtifact(libmoshutil);
@@ -291,24 +245,15 @@ pub fn build(b: *std.Build) void {
     // ====================
     // libmoshcrypto - Crypto library (no internal dependencies)
     // ====================
-    const crypto_module = b.createModule(.{
-        .root_source_file = null,
-        .target = target,
-        .optimize = optimize,
-        .link_libc = true,
-        .link_libcpp = true,
-    });
-
     const libmoshcrypto = b.addLibrary(.{
         .name = "moshcrypto",
         .linkage = .static,
-        .root_module = crypto_module,
+        .root_module = createCppModule(b, target, optimize),
     });
 
     // Add include paths
     libmoshcrypto.addIncludePath(b.path("src/crypto"));
-    libmoshcrypto.addIncludePath(b.path("src/include"));
-    libmoshcrypto.addIncludePath(b.path("."));
+    addStandardIncludes(libmoshcrypto, b);
 
     // Determine which OCB implementation to use
     const ocb_source = if (std.mem.eql(u8, crypto_backend, "openssl") and use_openssl_ocb)
@@ -352,25 +297,16 @@ pub fn build(b: *std.Build) void {
     // ====================
     // libmoshnetwork - Network library (depends on libmoshcrypto)
     // ====================
-    const network_module = b.createModule(.{
-        .root_source_file = null,
-        .target = target,
-        .optimize = optimize,
-        .link_libc = true,
-        .link_libcpp = true,
-    });
-
     const libmoshnetwork = b.addLibrary(.{
         .name = "moshnetwork",
         .linkage = .static,
-        .root_module = network_module,
+        .root_module = createCppModule(b, target, optimize),
     });
 
     // Add include paths
     libmoshnetwork.addIncludePath(b.path("src/network"));
     libmoshnetwork.addIncludePath(b.path("src/crypto"));
-    libmoshnetwork.addIncludePath(b.path("src/include"));
-    libmoshnetwork.addIncludePath(b.path("."));
+    addStandardIncludes(libmoshnetwork, b);
 
     // Add C++ source files (excluding transportfragment.cc which needs protobufs)
     libmoshnetwork.addCSourceFiles(.{
@@ -379,11 +315,7 @@ pub fn build(b: *std.Build) void {
             "src/network/compressor.cc",
             // Note: transportfragment.cc excluded - requires protobuf generation
         },
-        .flags = &.{
-            "-std=c++17",
-            "-Wall",
-            "-fPIC",
-        },
+        .flags = &standard_cpp_flags,
     });
 
     // Link with zlib for compression
@@ -418,24 +350,15 @@ pub fn build(b: *std.Build) void {
     }
 
     // Create the protobuf library
-    const protos_module = b.createModule(.{
-        .root_source_file = null,
-        .target = target,
-        .optimize = optimize,
-        .link_libc = true,
-        .link_libcpp = true,
-    });
-
     const libmoshprotos = b.addLibrary(.{
         .name = "moshprotos",
         .linkage = .static,
-        .root_module = protos_module,
+        .root_module = createCppModule(b, target, optimize),
     });
 
     // Add include paths
     libmoshprotos.addIncludePath(b.path("src/protobufs"));
-    libmoshprotos.addIncludePath(b.path("src/include"));
-    libmoshprotos.addIncludePath(b.path("."));
+    addStandardIncludes(libmoshprotos, b);
 
     // Add generated C++ source files (hardcoded for now)
     libmoshprotos.addCSourceFiles(.{
@@ -465,11 +388,7 @@ pub fn build(b: *std.Build) void {
         .files = &.{
             "src/network/transportfragment.cc",
         },
-        .flags = &.{
-            "-std=c++17",
-            "-Wall",
-            "-fPIC",
-        },
+        .flags = &standard_cpp_flags,
     });
 
     // Add protobuf include path to network library
@@ -481,25 +400,16 @@ pub fn build(b: *std.Build) void {
     // ====================
     // libmoshterminal - Terminal emulation library (depends on libmoshutil)
     // ====================
-    const terminal_module = b.createModule(.{
-        .root_source_file = null,
-        .target = target,
-        .optimize = optimize,
-        .link_libc = true,
-        .link_libcpp = true,
-    });
-
     const libmoshterminal = b.addLibrary(.{
         .name = "moshterminal",
         .linkage = .static,
-        .root_module = terminal_module,
+        .root_module = createCppModule(b, target, optimize),
     });
 
     // Add include paths
     libmoshterminal.addIncludePath(b.path("src/terminal"));
     libmoshterminal.addIncludePath(b.path("src/util"));
-    libmoshterminal.addIncludePath(b.path("src/include"));
-    libmoshterminal.addIncludePath(b.path("."));
+    addStandardIncludes(libmoshterminal, b);
 
     // Add all terminal C++ source files
     libmoshterminal.addCSourceFiles(.{
@@ -515,11 +425,7 @@ pub fn build(b: *std.Build) void {
             "src/terminal/terminalfunctions.cc",
             "src/terminal/terminaluserinput.cc",
         },
-        .flags = &.{
-            "-std=c++17",
-            "-Wall",
-            "-fPIC",
-        },
+        .flags = &standard_cpp_flags,
     });
 
     // Link with ncurses/tinfo for terminal capabilities
@@ -531,18 +437,10 @@ pub fn build(b: *std.Build) void {
     // ====================
     // libmoshstatesync - State synchronization library (depends on libmoshterminal + libmoshprotos)
     // ====================
-    const statesync_module = b.createModule(.{
-        .root_source_file = null,
-        .target = target,
-        .optimize = optimize,
-        .link_libc = true,
-        .link_libcpp = true,
-    });
-
     const libmoshstatesync = b.addLibrary(.{
         .name = "moshstatesync",
         .linkage = .static,
-        .root_module = statesync_module,
+        .root_module = createCppModule(b, target, optimize),
     });
 
     // Add include paths
@@ -550,8 +448,7 @@ pub fn build(b: *std.Build) void {
     libmoshstatesync.addIncludePath(b.path("src/terminal"));
     libmoshstatesync.addIncludePath(b.path("src/protobufs"));
     libmoshstatesync.addIncludePath(b.path("src/util"));
-    libmoshstatesync.addIncludePath(b.path("src/include"));
-    libmoshstatesync.addIncludePath(b.path("."));
+    addStandardIncludes(libmoshstatesync, b);
 
     // Add statesync C++ source files
     libmoshstatesync.addCSourceFiles(.{
@@ -579,17 +476,9 @@ pub fn build(b: *std.Build) void {
     // ====================
     // mosh-client - Main client executable
     // ====================
-    const mosh_client_module = b.createModule(.{
-        .root_source_file = null,
-        .target = target,
-        .optimize = optimize,
-        .link_libc = true,
-        .link_libcpp = true,
-    });
-
     const mosh_client = b.addExecutable(.{
         .name = "mosh-client",
-        .root_module = mosh_client_module,
+        .root_module = createCppModule(b, target, optimize),
     });
 
     // Add include paths
@@ -600,8 +489,7 @@ pub fn build(b: *std.Build) void {
     mosh_client.addIncludePath(b.path("src/crypto"));
     mosh_client.addIncludePath(b.path("src/protobufs"));
     mosh_client.addIncludePath(b.path("src/util"));
-    mosh_client.addIncludePath(b.path("src/include"));
-    mosh_client.addIncludePath(b.path("."));
+    addStandardIncludes(mosh_client, b);
 
     // Add mosh-client source files
     mosh_client.addCSourceFiles(.{
@@ -648,17 +536,9 @@ pub fn build(b: *std.Build) void {
     // ====================
     // mosh-server - Main server executable
     // ====================
-    const mosh_server_module = b.createModule(.{
-        .root_source_file = null,
-        .target = target,
-        .optimize = optimize,
-        .link_libc = true,
-        .link_libcpp = true,
-    });
-
     const mosh_server = b.addExecutable(.{
         .name = "mosh-server",
-        .root_module = mosh_server_module,
+        .root_module = createCppModule(b, target, optimize),
     });
 
     // Add include paths
@@ -669,8 +549,7 @@ pub fn build(b: *std.Build) void {
     mosh_server.addIncludePath(b.path("src/crypto"));
     mosh_server.addIncludePath(b.path("src/protobufs"));
     mosh_server.addIncludePath(b.path("src/util"));
-    mosh_server.addIncludePath(b.path("src/include"));
-    mosh_server.addIncludePath(b.path("."));
+    addStandardIncludes(mosh_server, b);
 
     // Add mosh-server source file (just one!)
     mosh_server.addCSourceFiles(.{
