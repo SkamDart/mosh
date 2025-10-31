@@ -40,6 +40,20 @@ const standard_cpp_flags = [_][]const u8{
     "-fPIC",
 };
 
+/// Hardcoded Homebrew paths for macOS dependencies
+/// TODO: Detect these dynamically or make configurable
+const protobuf_include_path = "-I/opt/homebrew/Cellar/protobuf/33.0/include";
+const abseil_include_path = "-I/opt/homebrew/Cellar/abseil/20250814.1/include";
+
+/// C++ flags with protobuf includes (for protobuf-dependent targets)
+const cpp_flags_with_protobuf = [_][]const u8{
+    "-std=c++17",
+    "-Wall",
+    "-fPIC",
+    protobuf_include_path,
+    abseil_include_path,
+};
+
 fn buildTests(config: TestConfig) void {
     const b = config.b;
     const target = config.target;
@@ -135,13 +149,7 @@ fn buildTests(config: TestConfig) void {
         .files = &.{
             "src/tests/nonce-incr.cc",
         },
-        .flags = &.{
-            "-std=c++17",
-            "-Wall",
-            "-fPIC",
-            "-I/opt/homebrew/Cellar/protobuf/33.0/include",
-            "-I/opt/homebrew/Cellar/abseil/20250814.1/include",
-        },
+        .flags = &cpp_flags_with_protobuf,
     });
 
     nonce_incr_test.linkLibrary(libmoshnetwork);
@@ -456,13 +464,7 @@ pub fn build(b: *std.Build) void {
             "src/statesync/completeterminal.cc",
             "src/statesync/user.cc",
         },
-        .flags = &.{
-            "-std=c++17",
-            "-Wall",
-            "-fPIC",
-            "-I/opt/homebrew/Cellar/protobuf/33.0/include",
-            "-I/opt/homebrew/Cellar/abseil/20250814.1/include",
-        },
+        .flags = &cpp_flags_with_protobuf,
     });
 
     // Link with protobuf library (since it uses protobufs)
@@ -498,13 +500,7 @@ pub fn build(b: *std.Build) void {
             "src/frontend/stmclient.cc",
             "src/frontend/terminaloverlay.cc",
         },
-        .flags = &.{
-            "-std=c++17",
-            "-Wall",
-            "-fPIC",
-            "-I/opt/homebrew/Cellar/protobuf/33.0/include",
-            "-I/opt/homebrew/Cellar/abseil/20250814.1/include",
-        },
+        .flags = &cpp_flags_with_protobuf,
     });
 
     // Link with all the static libraries we built
@@ -561,8 +557,8 @@ pub fn build(b: *std.Build) void {
             "-Wall",
             "-fPIC",
             "-Wno-deprecated-declarations", // Suppress shared_ptr::unique() deprecation warning
-            "-I/opt/homebrew/Cellar/protobuf/33.0/include",
-            "-I/opt/homebrew/Cellar/abseil/20250814.1/include",
+            protobuf_include_path,
+            abseil_include_path,
         },
     });
 
