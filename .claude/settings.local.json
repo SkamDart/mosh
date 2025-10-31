@@ -7,7 +7,9 @@
       "Read(//nix/store/z5igg8shrk55akwzidp77sw9056j2hbg-zig-0.15.1/lib/std/**)",
       "Bash(ar:*)",
       "Bash(protoc:*)",
-      "Bash(nm:*)"
+      "Bash(nm:*)",
+      "Bash(find:*)",
+      "Bash(git rm:*)"
     ],
     "deny": [],
     "ask": []
